@@ -1,0 +1,177 @@
+#!/usr/bin/perl -w
+#
+# check_ocsp_stapling
+#   Icinga/Nagios script to check OCSP stapling status and expiration
+#
+# Copyright (c) 2016 Patrick Figel <patrick@figel.email>
+#
+# Largely based on check_ssl_certificate
+# Copyright (c) 2006-2008 David Alden <alden@math.ohio-state.edu>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+#
+#
+# Description:
+#   This script will check if a TLS server is sending an unexpired and good OCSP
+#   staple. For example, to check an IMAP server on an imaps port:
+#
+#     check_ocsp_stapling -H example.com -p 993
+#
+#
+# Installation:
+#   Edit this script, replacing the line:
+#       use lib "/usr/lib/nagios/plugins";
+#   with the path to your nagios plugins (also known as Monitoring Plugins)
+#   directory (where utils.pm is located).  Also edit the line:
+#       my $openssl = "/usr/bin/openssl";
+#   with the path to your openssl binary.  Then copy the script into
+#   your plugins directory.
+#
+use strict;
+use Time::Local;
+use Getopt::Long;
+use lib "/usr/lib/nagios/plugins";
+use utils qw(%ERRORS &print_revision &support &usage);
+
+my $PROGNAME="check_ocsp_stapling";
+my $REVISION="0.1.0";
+
+#
+$ENV{PATH}="/usr/sbin:/usr/bin:/bin";
+
+#
+my $openssl = "/usr/bin/openssl";
+
+my $critical = 24;
+my $help;
+my $host;
+my $port = 443;
+my $additional = '';
+my $version;
+my $warning = 36;
+
+#
+my %months = ('Jan' => 0, 'Feb' => 1, 'Mar' => 2, 'Apr' => 3, 'May' => 4,
+              'Jun' => 5, 'Jul' => 6, 'Aug' => 7, 'Sep' => 8, 'Oct' => 9,
+              'Nov' => 10, 'Dec' => 11);
+
+#
+Getopt::Long::Configure('bundling');
+if (GetOptions(
+         "a=s" => \$additional,
+         "c:s" => \$critical,
+         "h"   => \$help,
+         "H:s" => \$host,
+         "o=s" => \$openssl,
+         "p=i" => \$port,
+         "V"   => \$version,
+         "w:s" => \$warning,
+        ) == 0) {
+
+  print_usage();
+  exit $ERRORS{'UNKNOWN'}
+}
+
+if ($version) {
+  print_revision($PROGNAME, "$REVISION");
+  exit $ERRORS{'OK'};
+}
+
+if ($help) {
+  print_help();
+  exit $ERRORS{'OK'};
+}
+
+if (! utils::is_hostname($host)) {
+  usage("");
+  exit $ERRORS{'UNKNOWN'};
+}
+
+open(OPENSSL, "$openssl s_client -connect $host:$port -status -servername $host $additional < /dev/null 2>&1 |") ||
+  die "unable to open $openssl: $!";
+
+my $date;
+my $certStatus = "unknown";
+while (<OPENSSL>) {
+  if ($_ =~ /^OCSP response: no response sent/) {
+    print "$PROGNAME: CRITICAL - staple missing.\n";
+    exit $ERRORS{'CRITICAL'};
+  }
+  if ($_ =~ /Cert Status: (.*)/) {
+    $certStatus = $1;
+  }
+  if ($_ =~ /Next Update: (.*)/) {
+    $date = $1;
+    chomp($date);
+  }
+}
+close(OPENSSL);
+
+if ($certStatus ne 'good') {
+  print "$PROGNAME: CRITICAL - certificate status=$certStatus.\n";
+  exit $ERRORS{'CRITICAL'};
+}
+
+$date =~ s/ +/ /g;
+
+my ($month, $day, $hour, $min, $sec, $year, $tz) = split(/[\s+|:]/, $date);
+
+my $hoursLeft = int((timegm($sec, $min, $hour, $day, $months{$month}, $year - 1900) - time()) / 3600);
+
+if ($hoursLeft < 0) {
+  print "$PROGNAME: CRITICAL - OCSP response expired " . abs($hoursLeft) . " hour(s) ago.\n";
+} elsif ($hoursLeft <= $critical) {
+  print "$PROGNAME: CRITICAL - only $hoursLeft hours(s) left.\n";
+  exit $ERRORS{'CRITICAL'};
+} elsif ($hoursLeft <= $warning) {
+  print "$PROGNAME: WARNING - only $hoursLeft hours(s) left.\n";
+  exit $ERRORS{'WARNING'};
+} else {
+  print "$PROGNAME: $hoursLeft hours(s) left.\n";
+}
+
+exit $ERRORS{'OK'};
+
+sub print_help {
+  print_revision($PROGNAME, "$REVISION");
+  print "Copyright (c) 2016 Patrick Figel
+Based on check_ssl_certificate, Copyright (c) 2006 David Alden
+
+Check if a TLS server is sending an unexpired and good OCSP staple
+
+";
+
+  print_usage();
+
+  print "
+-a <add>   add the text to the openssl line, used for checking OCSP stapling
+           with starttls (\"-a '-starttls smtp'\")
+-c <num>   exit with CRITICAL status if number of hours left is less than <num>
+-h         show this help script
+-H <host>  check OCSP stapling on the indicated host
+-o <path>  path to openssl binary
+-p <port>  check OCSP stapling on the specified port
+-w <num>   exit with WARNING status if number of hours left is less than <num>
+-V         show version and license information
+";
+
+  support();
+}
+
+
+sub print_usage {
+  print "Usage: $PROGNAME -H <host> [-p <port>] [-c <num>] [-w <num>]\n";
+  return();
+}
