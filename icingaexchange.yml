@@ -8,11 +8,11 @@ type: Plugin
 license: gplv2
 releases:
   -
-    name: 0.1.0
-    description: "Initial release"
+    name: 0.1.1
+    description: "Fix exit code for expired OCSP response"
     files:
       -
         name: check_ocsp_stapling
         url: "file:///check_ocsp_stapling"
         description: "Check script for OCSP stapling"
-        checksum: dff66c151616329b079376337a946d3d
+        checksum: ccee5e134d24a25f7a533cbf51cf22a7
