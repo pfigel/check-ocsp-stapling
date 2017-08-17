@@ -3,7 +3,7 @@
 # check_ocsp_stapling
 #   Icinga/Nagios script to check OCSP stapling status and expiration
 #
-# Copyright (c) 2016 Patrick Figel <patrick@figel.email>
+# Copyright (c) 2016-2017 Patrick Figel <patrick@figel.email>
 #
 # Largely based on check_ssl_certificate
 # Copyright (c) 2006-2008 David Alden <alden@math.ohio-state.edu>
@@ -46,7 +46,7 @@ use lib "/usr/lib/nagios/plugins";
 use utils qw(%ERRORS &print_revision &support &usage);
 
 my $PROGNAME="check_ocsp_stapling";
-my $REVISION="0.1.0";
+my $REVISION="0.1.1";
 
 #
 $ENV{PATH}="/usr/sbin:/usr/bin:/bin";
@@ -132,6 +132,7 @@ my $hoursLeft = int((timegm($sec, $min, $hour, $day, $months{$month}, $year - 19
 
 if ($hoursLeft < 0) {
   print "$PROGNAME: CRITICAL - OCSP response expired " . abs($hoursLeft) . " hour(s) ago.\n";
+  exit $ERRORS{'CRITICAL'};
 } elsif ($hoursLeft <= $critical) {
   print "$PROGNAME: CRITICAL - only $hoursLeft hours(s) left.\n";
   exit $ERRORS{'CRITICAL'};
@@ -146,7 +147,7 @@ exit $ERRORS{'OK'};
 
 sub print_help {
   print_revision($PROGNAME, "$REVISION");
-  print "Copyright (c) 2016 Patrick Figel
+  print "Copyright (c) 2016-2017 Patrick Figel
 Based on check_ssl_certificate, Copyright (c) 2006 David Alden
 
 Check if a TLS server is sending an unexpired and good OCSP staple
